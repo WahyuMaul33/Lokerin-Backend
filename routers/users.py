@@ -77,7 +77,6 @@ async def create_user(
         message=f"User registered successfully as {user.role}", 
         data=new_user
     )
-    
 
 @router.get("/me", response_model=APIResponse[UserPrivate])
 async def get_current_user_profile(
@@ -96,62 +95,6 @@ async def get_current_user_profile(
         message="Profile retrieved successfully", 
         data=current_user
     )
-
-
-@router.get("/{user_id}", response_model=APIResponse[UserPublic])
-async def get_user(
-    user_id: int, 
-    db: Annotated[AsyncSession, Depends(get_db)],
-):
-    """
-    **Get Public User Profile**
-    
-    Retrieves basic information about a user by their ID.
-    
-    **Response:** `UserPublic` schema.
-    - Unlike `UserPrivate`, this schema hides sensitive fields like email and phone number.
-    """
-    result = await db.execute(select(models.User).where(models.User.id == user_id))
-    user = result.scalars().first()
-    
-    if not user:
-         raise HTTPException(status_code=404, detail="User not found")
-    
-    return APIResponse(
-        success=True, 
-        message="user retrieved successfully", 
-        data=user
-    )
-
-
-@router.get("/{user_id}/job_posts", response_model=APIResponse[list[JobResponse]])
-async def get_user_job_posts(user_id: int, db: Annotated[AsyncSession, Depends(get_db)]):
-    """
-    **Get Jobs Posted by User**
-    
-    Fetches all active job listings created by a specific Recruiter (Owner).
-    Useful for a "Company Page" or "Recruiter Profile" view.
-    """
-    # Check if user exists first
-    result = await db.execute(select(models.User).where(models.User.id == user_id))
-    if not result.scalars().first():
-        raise HTTPException(status_code=404, detail="User not found")
-
-    # Fetch Jobs
-    result = await db.execute(
-        select(models.Job)
-        .options(selectinload(models.Job.owner))
-        .where(models.Job.owner_id == user_id)
-        .order_by(models.Job.job_posted.desc()),
-    )
-    jobs = result.scalars().all()
-    
-    return APIResponse(
-        success=True, 
-        message="User jobs retrieved successfully", 
-        data=jobs
-    )
-
 
 @router.patch("/me", response_model=APIResponse[UserPrivate])
 async def update_user_me(
@@ -191,7 +134,58 @@ async def update_user_me(
         data=current_user
     )
 
+@router.get("/{user_id}", response_model=APIResponse[UserPublic])
+async def get_user(
+    user_id: int, 
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """
+    **Get Public User Profile**
+    
+    Retrieves basic information about a user by their ID.
+    
+    **Response:** `UserPublic` schema.
+    - Unlike `UserPrivate`, this schema hides sensitive fields like email and phone number.
+    """
+    result = await db.execute(select(models.User).where(models.User.id == user_id))
+    user = result.scalars().first()
+    
+    if not user:
+         raise HTTPException(status_code=404, detail="User not found")
+    
+    return APIResponse(
+        success=True, 
+        message="user retrieved successfully", 
+        data=user
+    )
 
+@router.get("/{user_id}/job_posts", response_model=APIResponse[list[JobResponse]])
+async def get_user_job_posts(user_id: int, db: Annotated[AsyncSession, Depends(get_db)]):
+    """
+    **Get Jobs Posted by User**
+    
+    Fetches all active job listings created by a specific Recruiter (Owner).
+    Useful for a "Company Page" or "Recruiter Profile" view.
+    """
+    # Check if user exists first
+    result = await db.execute(select(models.User).where(models.User.id == user_id))
+    if not result.scalars().first():
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Fetch Jobs
+    result = await db.execute(
+        select(models.Job)
+        .options(selectinload(models.Job.owner))
+        .where(models.Job.owner_id == user_id)
+        .order_by(models.Job.job_posted.desc()),
+    )
+    jobs = result.scalars().all()
+    
+    return APIResponse(
+        success=True, 
+        message="User jobs retrieved successfully", 
+        data=jobs
+    )
 
 @router.patch("/{user_id}", response_model=APIResponse[UserPrivate])
 async def update_user(
@@ -254,7 +248,6 @@ async def update_user(
         message="Profile updated successfully", 
         data=user
     )
-
 
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_user(

@@ -1,17 +1,123 @@
 from typing import Annotated, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_, and_
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from pgvector.sqlalchemy import Vector
 import models
 from database import get_db
-from schemas import JobCreate, JobResponse, JobUpdate, APIResponse, MatchRequest, JobMatchResponse
+from schemas import JobCreate, JobResponse, JobUpdate, APIResponse, MatchRequest, JobMatchResponse, ApplicationResponse
 from dependencies import get_current_user
 from services.ai import get_embedding
 
 router = APIRouter()
+
+# --- AI ENDPOINT ---
+
+@router.get("/match", response_model=APIResponse[list[JobMatchResponse]])
+async def match_jobs_profile(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[AsyncSession, Depends(get_current_user)],
+    limit: int = 5
+):
+    """
+    **Auto-Match (Resume Match)**
+    
+    The core feature of Lokerin. 
+    Matches the user's stored **CV Vector** against all **Job Vectors** in the database.
+    """
+    # 1. Get User Profile
+    result = await db.execute(
+        select(models.UserProfile).where(models.UserProfile.user_id == current_user.id)
+    )
+    profile = result.scalar_one_or_none()
+
+    if not profile or profile.profile_embedding is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You must upload a CV first so we can match you!"
+        )
+    
+    # 2. Vector Search Query (Cosine Similarity)
+    query = (
+        select(
+            models.Job,
+            models.Job.job_embedding.cosine_distance(profile.profile_embedding).label("distance")
+        )
+        .options(selectinload(models.Job.owner))
+        .order_by("distance") # Smallest distance = Best match
+        .limit(limit)
+    )
+
+    result = await db.execute(query)
+    matched_jobs = result.all()
+
+    # 3. Calculate Scores
+    response_data = []
+    for job, distance in matched_jobs:
+        # Cosine Distance is 0 to 2. 
+        # 0 = Perfect Match, 1 = No Match, 2 = Opposite.
+        # Formula: Score = 1 - Distance (clamped to 0%)
+        raw_score = 1 - distance
+        match_percentage = max(0, min(100, raw_score*100))
+    
+    job_data = JobMatchResponse(
+        **job.__dict__,
+        match_score=round(match_percentage, 1)
+    )
+    response_data.append(job_data)
+
+    return APIResponse(
+        success=True,
+        message=f"Found {len(response_data)} jobs matching your profiles!",
+        data=response_data
+    )
+
+@router.post("/match", response_model=APIResponse[list[JobMatchResponse]])
+async def match_jobs_manual(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    match_data: MatchRequest,
+):
+    """
+    **Manual AI Search (Keyword Match)**
+    
+    Generates a vector *on-the-fly* from user-provided keywords and finds matching jobs.
+    Useful for a "Smart Search Bar".
+    """
+    # A. Generate the User's Vector from input keywords
+    user_query = " ".join(match_data.skills)
+    user_embedding = get_embedding(user_query)
+
+    # B. The Vector Search Query (PostgreSQL)
+    # Uses L2 Distance (Euclidean) to find closest vectors
+    query = (
+        select(models.Job, models.Job.job_embedding.l2_distance(user_embedding).label("distance"))
+        .options(selectinload(models.Job.owner))
+        .order_by(models.Job.job_embedding.l2_distance(user_embedding))
+        .limit(match_data.limit)
+    )
+
+    result = await db.execute(query)
+    matches = result.all() 
+
+    # C. Format the Response with Match Score
+    response_data = []
+    for job, distance in matches:
+        # Convert L2 distance to 0-100% score
+        score = 1 / (1 + distance) 
+        
+        # Attach score to the job object
+        job_dict = job.__dict__
+        job_dict["match_score"] = round(score * 100, 1) 
+        
+        response_data.append(job_dict)
+
+    return APIResponse(
+        success=True,
+        message=f"Found {len(response_data)} jobs matching your skills",
+        data=response_data
+    )
 
 # --- PUBLIC/JOB SEEKER ENDPOINTS ---
 
@@ -24,7 +130,9 @@ async def get_jobs(
     # Filter params
     search: Optional[str] = None,
     location: Optional[str] = None,
+    job_type: Optional[models.JobType] = None, 
     is_remote: Optional[bool] = None,
+    allow_remote_hybrid: bool = False,
     min_salary: Optional[int] = Query(None, ge=0)
     ):
     """
@@ -51,12 +159,26 @@ async def get_jobs(
             models.Job.title.ilike(f"%{search}%") |
             models.Job.description.ilike(f"%{search}%")
         )
-    if location:
-        query = query.where(models.Job.location.ilike(f"%{location}%"))
-    if is_remote is not None:
-        query = query.where(models.Job.is_remote == is_remote)
     if min_salary:
         query = query.where(models.Job.salary >= min_salary)
+    if job_type:
+        query = query.where(models.Job.job_type == job_type)
+    if location:
+        if allow_remote_hybrid:
+            # Hybrid Logic: (Location LIKE 'Jakarta') OR (Remote = True)
+            query = query.where(
+                or_(
+                    models.Job.location.ilike(f"%{location}"),
+                    models.Job.is_remote == True
+                )
+            )
+        else:
+            # Standard Logic: Location MUST match (e.g 'Jakarta')
+            query = query.where(models.Job.location.ilike(f"%{location}%"))
+    
+    # Standard Remote Filter (Only if not using hybrid)
+    if is_remote is not None:
+        query = query.where(models.Job.is_remote == is_remote)
 
     # Count Query
     count_query = select(func.count()).select_from(query.subquery())
@@ -248,114 +370,46 @@ async def delete_job(
     await db.delete(job)
     await db.commit()
 
-
-# --- AI ENDPOINT ---
-
-@router.post("/match", response_model=APIResponse[list[JobMatchResponse]])
-async def match_jobs(
+@router.get("/{job_id}/applications", response_model=APIResponse[list[ApplicationResponse]])
+async def get_job_applications(
+    job_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
-    match_data: MatchRequest,
+    current_user: Annotated[models.User, Depends(get_current_user)]
 ):
     """
-    **Manual AI Search (Keyword Match)**
+    **View Applicants for a Job**
     
-    Generates a vector *on-the-fly* from user-provided keywords and finds matching jobs.
-    Useful for a "Smart Search Bar".
-    """
-    # A. Generate the User's Vector from input keywords
-    user_query = " ".join(match_data.skills)
-    user_embedding = get_embedding(user_query)
-
-    # B. The Vector Search Query (PostgreSQL)
-    # Uses L2 Distance (Euclidean) to find closest vectors
-    query = (
-        select(models.Job, models.Job.job_embedding.l2_distance(user_embedding).label("distance"))
-        .options(selectinload(models.Job.owner))
-        .order_by(models.Job.job_embedding.l2_distance(user_embedding))
-        .limit(match_data.limit)
-    )
-
-    result = await db.execute(query)
-    matches = result.all() 
-
-    # C. Format the Response with Match Score
-    response_data = []
-    for job, distance in matches:
-        # Convert L2 distance to 0-100% score
-        score = 1 / (1 + distance) 
-        
-        # Attach score to the job object
-        job_dict = job.__dict__
-        job_dict["match_score"] = round(score * 100, 1) 
-        
-        response_data.append(job_dict)
-
-    return APIResponse(
-        success=True,
-        message=f"Found {len(response_data)} jobs matching your skills",
-        data=response_data
-    )
-
-
-@router.get("/match", response_model=APIResponse[list[JobMatchResponse]])
-async def match_jobs(
-    db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[AsyncSession, Depends(get_current_user)],
-    limit: int = 5
-):
-    """
-    **Auto-Match (Resume Match)**
+    Allows a Recruiter to see who has applied to *their* specific job posting.
     
-    The core feature of Lokerin. 
-    Matches the user's stored **CV Vector** against all **Job Vectors** in the database.
+    **Security Check:**
+    - Verifies that `current_user.id` matches the `job.owner_id`. 
+    - Prevents random users from seeing applicants for jobs they don't own.
     """
-    # 1. Get User Profile
+    # 1. Verify the job exists AND belongs to the current user
     result = await db.execute(
-        select(models.UserProfile).where(models.UserProfile.user_id == current_user.id)
+        select(models.Job).where(models.Job.id == job_id)
     )
-    profile = result.scalar_one_or_none()
+    job = result.scalar_one_or_none()
 
-    if not profile or profile.profile_embedding is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="You must upload a CV first so we can match you!"
-        )
-    
-    # 2. Vector Search Query (Cosine Similarity)
-    query = (
-        select(
-            models.Job,
-            models.Job.job_embedding.cosine_distance(profile.profile_embedding).label("distance")
-        )
-        .options(selectinload(models.Job.owner))
-        .order_by("distance") # Smallest distance = Best match
-        .limit(limit)
+    # Ownership Check
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    if job.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You can only view applications for your own jobs.")
+
+    # 2. Fetch applications associated with this job_id
+    app_result = await db.execute(
+        select(models.Application)
+        .where(models.Application.job_id == job_id)
     )
-
-    result = await db.execute(query)
-    matched_jobs = result.all()
-
-    # 3. Calculate Scores
-    response_data = []
-    for job, distance in matched_jobs:
-        # Cosine Distance is 0 to 2. 
-        # 0 = Perfect Match, 1 = No Match, 2 = Opposite.
-        # Formula: Score = 1 - Distance (clamped to 0%)
-        raw_score = 1 - distance
-        match_percentage = max(0, min(100, raw_score*100))
-    
-    job_data = JobMatchResponse(
-        **job.__dict__,
-        match_score=round(match_percentage, 1)
-    )
-    response_data.append(job_data)
+    applications = app_result.scalars().all()
 
     return APIResponse(
         success=True,
-        message=f"Found {len(response_data)} jobs matching your profiles!",
-        data=response_data
+        message=f"Found {len(applications)} applications",
+        data=applications
     )
-
 
 
  

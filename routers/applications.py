@@ -10,11 +10,11 @@ import schemas
 from dependencies import get_current_user
 from schemas import APIResponse, ApplicationResponse, ApplicationCreate, ApplicationStatusUpdate
 
-router = APIRouter(prefix="/applications", tags=["Applications"])
+router = APIRouter()
 
 # --- JOB SEEKER ENDPOINTS----
 
-@router.post("/{job_id}/apply", response_model=APIResponse[ApplicationResponse])
+@router.post("/{job_id}", response_model=APIResponse[ApplicationResponse])
 async def apply_to_job(
     job_id: int,
     application_data: ApplicationCreate,
@@ -53,13 +53,31 @@ async def apply_to_job(
     )
     if existing_app.scalar_one_or_none():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You have already applied to this job.")
-
+    
+    final_cv_file = application_data.cv_file
+    # If user didn't provide a specific file, try to grab from their Profile
+    if not final_cv_file:
+        # Fetch the User Profile
+        profile_result = await db.execute(
+            select(models.UserProfile).where(models.UserProfile.user_id == current_user.id)
+        )
+        user_profile = profile_result.scalar_one_or_none()
+        
+        if user_profile and user_profile.resume_url:
+            final_cv_file = user_profile.resume_url
+        else:
+            raise HTTPException(
+                status_code=400, 
+                detail="No CV found. Please upload a CV to your profile first or provide a file."
+            )
+        
     # 4. Create Application
     new_application = models.Application(
         job_id=job_id,
         user_id=current_user.id,
-        cv_file=application_data.cv_file, # The path/URL to the CV file
-        status=models.ApplicationStatus.PENDING # Default status is always "PENDING"
+        cv_file=final_cv_file, 
+        cover_letter=application_data.cover_letter, 
+        status=models.ApplicationStatus.PENDING
     )
 
     db.add(new_application)
@@ -71,7 +89,6 @@ async def apply_to_job(
         message="Application submitted successfully!",
         data=new_application
     )
-
 
 @router.get("/me", response_model=APIResponse[list[ApplicationResponse]])
 async def get_my_applications(
@@ -104,49 +121,7 @@ async def get_my_applications(
 
 # --- JOB OWNER ENDPOINTS ---
 
-@router.get("/{job_id}/applications", response_model=APIResponse[list[ApplicationResponse]])
-async def get_job_applications(
-    job_id: int,
-    db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[models.User, Depends(get_current_user)]
-):
-    """
-    **View Applicants for a Job**
-    
-    Allows a Recruiter to see who has applied to *their* specific job posting.
-    
-    **Security Check:**
-    - Verifies that `current_user.id` matches the `job.owner_id`. 
-    - Prevents random users from seeing applicants for jobs they don't own.
-    """
-    # 1. Verify the job exists AND belongs to the current user
-    result = await db.execute(
-        select(models.Job).where(models.Job.id == job_id)
-    )
-    job = result.scalar_one_or_none()
-
-    # Ownership Check
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
-
-    if job.owner_id != current_user.id:
-        raise HTTPException(status_code=403, detail="You can only view applications for your own jobs.")
-
-    # 2. Fetch applications associated with this job_id
-    app_result = await db.execute(
-        select(models.Application)
-        .where(models.Application.job_id == job_id)
-    )
-    applications = app_result.scalars().all()
-
-    return APIResponse(
-        success=True,
-        message=f"Found {len(applications)} applications",
-        data=applications
-    )
-
-
-@router.patch("/review/{application_id}", response_model=APIResponse[ApplicationResponse])
+@router.patch("/{application_id}", response_model=APIResponse[ApplicationResponse])
 async def review_application(
     application_id: int,    
     status_update: ApplicationStatusUpdate,

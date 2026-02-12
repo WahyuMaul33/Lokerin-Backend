@@ -13,6 +13,12 @@ class Role(str, enum.Enum):
     OWNER = "OWNER"   # Recruiter / Employer
     SEEKER = "SEEKER" # Job Seeker / Candidate
 
+class JobType(str, enum.Enum):
+    FULL_TIME = "FULL_TIME"
+    PART_TIME = "PART_TIME"
+    CONTRACT = "CONTRACT"
+    INTERNSHIP = "INTERNSHIP"
+    FREELANCE = "FREELANCE"
 class ApplicationStatus(str, enum.Enum):
     """ Tracks the lifecycle of a job application """
     PENDING = "PENDING"
@@ -85,7 +91,6 @@ class UserProfile(Base):
     # Relationship
     user = relationship("User", back_populates="profile")
 
-
 class Job(Base):
     """
     **Job Table**
@@ -102,6 +107,9 @@ class Job(Base):
     description: Mapped[str] = mapped_column(Text, nullable=False)
     is_remote: Mapped[bool] = mapped_column(Boolean, default=False)
 
+    # Job Types
+    job_type: Mapped[JobType] = mapped_column(SQLAEnum(JobType), default=JobType.FULL_TIME)
+    
     # Skills 
     skills: Mapped[list|str] = mapped_column(ARRAY(String), nullable=False, default=list)
     
@@ -119,7 +127,7 @@ class Job(Base):
     # Relationships
     owner: Mapped["User"] = relationship(back_populates="jobs")
     applications = relationship("Application", back_populates="job", cascade="all, delete-orphan")
-
+    
 
 class Application(Base):
     """
@@ -142,7 +150,8 @@ class Application(Base):
     # CV Snapshot 
     cv_file = Column(String, nullable=True) 
     applied_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
-
+    cover_letter = Column(Text, nullable=True)
+    
     # Relationships
     user = relationship("User", back_populates="applications")
     job = relationship("Job", back_populates="applications")
