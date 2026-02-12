@@ -1,7 +1,7 @@
 from pydantic import BaseModel, ConfigDict, Field, EmailStr
 from typing import Optional, Generic, TypeVar, List
 from datetime import datetime
-from models import Role, ApplicationStatus
+from models import Role, ApplicationStatus, JobType
 
 # Generic Type Variable for the API Response wrapper
 T = TypeVar('T')
@@ -75,7 +75,8 @@ class JobBase(BaseModel):
     title: str = Field(min_length=5, max_length=100)
     location: str = Field(min_length=1, max_length=100)
     salary: int = Field(gt=0, description="Salary in IDR") 
-    description: str = Field(min_length=20) 
+    description: str = Field(min_length=20)
+    job_type: JobType = Field(default=JobType.FULL_TIME) 
     is_remote: bool = Field(default=False)
     skills: list[str] = Field( 
         min_length=1,
@@ -103,6 +104,7 @@ class JobUpdate(BaseModel):
     location: str | None = None
     salary: int | None = None
     description: str | None = None
+    job_type: JobType | None = None
     is_remote: bool | None = None
 
 class JobResponse(JobBase):
@@ -141,6 +143,7 @@ class ApplicationResponse(BaseModel):
     job_id: int
     status: ApplicationStatus  
     cv_file: Optional[str] = None
+    cover_letter: Optional[str] = None
     applied_at: datetime
     
     # Optional: uncomment this to see Job details inside the Application response

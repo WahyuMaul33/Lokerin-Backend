@@ -1,25 +1,14 @@
-# 1. Security
 .env
 .env.prod
 .env.local
-
-# 2. Python System Files
 __pycache__/
 *.py[cod]
 *$py.class
-
-# 3. Virtual Environment 
 .venv/
 venv/
 env/
-
-# 4. IDE Settings 
 .vscode/
 .idea/
-
-# 5. Local Database Files
 *.db
 *.sqlite3
-
-# 6. Logs
 *.log

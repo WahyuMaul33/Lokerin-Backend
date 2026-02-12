@@ -68,7 +68,7 @@ app = FastAPI(
 # --- MIDDLEWARE ---
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # WARNING: Replace "*" with specific domains
+    allow_origins=["*"], # Replace "*" with specific domains
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -85,12 +85,12 @@ API_PREFIX = "/api/v1"
 app.include_router(auth.router, prefix=f"{API_PREFIX}/auth", tags=["Auth"])
 # Users: Registration, Profile management
 app.include_router(users.router, prefix=f"{API_PREFIX}/users", tags=["Users"])
+# User Profiles: CV Parsing, Bio
+app.include_router(profiles.router, prefix=f"{API_PREFIX}/users/profile", tags=["User Profiles"])
 # Jobs: Posting, Searching, AI Matching
 app.include_router(jobs.router, prefix=f"{API_PREFIX}/jobs", tags=["Jobs"])
-# User Profiles: CV Parsing, Bio
-app.include_router(profiles.router, prefix=f"{API_PREFIX}", tags=["User Profiles"])
 # Applications: Applying to jobs, Reviewing candidates
-app.include_router(applications.router, prefix=f"{API_PREFIX}", tags=["Applications"])
+app.include_router(applications.router, prefix=f"{API_PREFIX}/applications", tags=["Applications"])
 
 
 # --- GLOBAL ENDPOINTS ---
