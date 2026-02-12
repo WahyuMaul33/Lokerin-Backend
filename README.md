@@ -1,4 +1,4 @@
-# 🚀 LokerIn: AI-Powered Job Matching Platform
+# ℹ️ LokerIn: AI-Powered Job Matching Platform
 
 **LokerIn** is a next-generation job portal backend that replaces outdated "keyword search" with **Semantic AI Matching**. It uses vector embeddings to understand the *meaning* behind a resume, allowing candidates to find jobs based on skills and context, not just matching words.
 
@@ -110,7 +110,7 @@ ACCESS_TOKEN_EXPIRE_MINUTES=30
 POSTGRES_USER=lokerin
 POSTGRES_PASSWORD=change_me
 POSTGRES_DB=lokerin_db
-DB_HOST=db
+DB_HOST=db # Use 'localhost' if running locally without Docker
 DB_PORT=5432
 ```
 
