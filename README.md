@@ -1,6 +1,6 @@
 # ℹ️ LokerIn: AI-Powered Job Matching Platform
 
-**LokerIn** is a next-generation job portal backend that replaces outdated "keyword search" with **Semantic AI Matching**. It uses vector embeddings to understand the *meaning* behind a resume, allowing candidates to find jobs based on skills and context, not just matching words.
+**LokerIn** is a job portal backend that replaces outdated "keyword search" with **Semantic AI Matching**. It uses vector embeddings to understand the *meaning* behind a resume, allowing candidates to find jobs based on skills and context, not just matching words.
 
 ![Python](https://img.shields.io/badge/Python-3.11-blue?style=for-the-badge&logo=python)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.109-009688?style=for-the-badge&logo=fastapi)
@@ -33,7 +33,7 @@ graph TD
 ```
 
 ## 🗄️ Database Design (ERD)
-LokerIn uses a relational database enhanced with vector columns for AI operations.
+**LokerIn** uses a relational database enhanced with vector columns for AI operations.
 ```mermaid
 erDiagram
     Users ||--o{ Jobs : "posts (Recruiter)"
@@ -68,7 +68,7 @@ erDiagram
         int id PK
         int user_id FK
         int job_id FK
-        enum status "PENDING, ACCEPTED"
+        enum status "PENDING, REJECTED, ACCEPTED"
     }
 ```
 
@@ -81,7 +81,34 @@ erDiagram
 | Jobs | Job listings posted by recruiters. | 
 | Applications | Links Users to Jobs. | 
 
+## 🔌 API Endpoints
+
+### 🔐 Authentication & Users
+| Method | Endpoint | Description | Auth |
+| :--- | :--- | :--- | :--- |
+| **POST** | `/api/v1/auth/token` | Login & get JWT Access Token | ❌ |
+| **POST** | `/api/v1/users` | Register a new user (Seeker/Recruiter) | ❌ |
+| **GET** | `/api/v1/users/me` | Get current user details | ✅ |
+| **POST** | `/api/v1/users/profile/` | **Upload PDF Resume** (Parses text & Vectorizes) | ✅ |
+
+### 🧠 AI Matching & Jobs
+| Method | Endpoint | Description | Auth |
+| :--- | :--- | :--- | :--- |
+| **GET** | `/api/v1/jobs/match` | **AI Search:** Get jobs ranked by vector similarity to Profile | ✅ |
+| **GET** | `/api/v1/jobs` | Standard Search (Location, Salary, Filters) | ❌ |
+| **POST** | `/api/v1/jobs` | Post a new Job (Auto-generates embeddings) | ✅ (Recruiter) |
+| **GET** | `/api/v1/jobs/{id}` | Get specific job details | ❌ |
+
+### 📝 Applications
+| Method | Endpoint | Description | Auth |
+| :--- | :--- | :--- | :--- |
+| **POST** | `/api/v1/applications/{job_id}` | Apply to a job (Prevents duplicates) | ✅ (Seeker) |
+| **GET** | `/api/v1/applications/me` | View my application history & status | ✅ (Seeker) |
+| **GET** | `/api/v1/jobs/{job_id}/applications` | View all applicants for a job | ✅ (Recruiter) |
+| **PATCH** | `/api/v1/applications/{id}` | Update status (e.g., `ACCEPTED`, `REJECTED`) | ✅ (Recruiter) |
+
 ## ✨ Key Features
+
 ### 🧠 AI & Vector Search Engine
 * **Semantic Resume Matching**: Uses *Cosine Similarity* to match candidates to jobs based on *meaning* (e.g., matching "React" skills to "Frontend" jobs), not just keywords.
 * **Automated Vectorization**: Automatically generates 384-dimensional vector embeddings (`all-MiniLM-L6-v2`) whenever a job is posted or updated.
