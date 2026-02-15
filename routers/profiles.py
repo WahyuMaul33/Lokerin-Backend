@@ -23,21 +23,27 @@ async def create_or_update_profile(
     file: UploadFile = File(...), 
 ):
     """
-    **Upload CV & Auto-Generate Profile**
-    
-    Parses a PDF Resume using internal tools (Regex/PyPDF).
-    
-    **What it does:**
-    1. Extracts Text from PDF.
-    2. Extracts Skills (Regex matching).
-    3. Calculates Experience Years (Date heuristic).
-    4. **Generates Vector Embedding** (User Brain).
-    5. Saves/Updates the UserProfile in the DB.
-    
-    **Upsert Logic:**
-    - If profile exists: Updates Skills/Vector/Years. Only updates Bio/Name if empty or `force_refresh=True`.
-    - If new: Creates a fresh profile.
+    Upload CV & Auto-Generate Profile
+
+    Parses a PDF resume and synchronizes it with the user profile.
+
+    ### Args
+    - **force_refresh** (bool, optional):
+    - **False (default)** — Safety mode. Updates technical data (embeddings, skills)
+        while preserving existing `bio` and `full_name`. Use this to avoid
+        overwriting manual user edits.
+    - **True** — Sync mode. Overwrites all profile fields, including `bio`
+        and `full_name`, using newly extracted data from the PDF.
+
+    ### Workflow
+    1. Validates file type and size (2 MB limit).
+    2. Extracts text, skills, and experience via AI service.
+    3. Performs an upsert:
+    - Updates `profile_embedding` for accurate AI matching.
+    - Updates `skills` and `experience_years`.
+    - Conditionally updates `bio` and `full_name` based on `force_refresh`.
     """
+
     # 1. Validate file type
     if file.content_type != "application/pdf":
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only PDF files are allowed.")
