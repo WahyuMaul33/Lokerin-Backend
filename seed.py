@@ -1,10 +1,11 @@
 import asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
-from database import SessionLocal, engine, Base
-from models import User, Job, UserRole, JobType
-from routers.auth import get_password_hash
-from services.ai import get_embedding # Uses your new AI logic automatically!
+from database import AsyncSessionLocal, engine, Base
+from models import User, Job, Role, JobType
+from security import hash_password 
+from services.ai import get_embedding 
 import random
+from sqlalchemy import text
 from datetime import datetime
 
 # --- 🎯 THE NEW SKILL POOL (Aligned with your Taxonomy) ---
@@ -20,20 +21,27 @@ LOCATIONS = ["Jakarta", "Bali", "Bandung", "Surabaya", "Yogyakarta", "Remote", "
 COMPANIES = ["GoTo", "Traveloka", "Shopee", "Tokopedia", "Blibli", "Ruangguru", "Tiket.com", "TechNova"]
 
 async def seed_db():
+    # CONNECT
     async with engine.begin() as conn:
-        # Create tables from scratch
+        print("🔧 Enabling pgvector extension...")
+        # 1. Force enable the vector extension FIRST
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        
+        # 2. Drop and Create tables
+        print("🗑️ Dropping old tables...")
         await conn.run_sync(Base.metadata.drop_all)
+        print("🏗️ Creating new tables...")
         await conn.run_sync(Base.metadata.create_all)
 
-    async with SessionLocal() as db:
+    async with AsyncSessionLocal() as db:
         print("🌱 Seeding Users...")
         
         # 1. Create a Recruiter
         recruiter = User(
             email="recruiter@example.com",
             username="recruiter_main",
-            hashed_password=get_password_hash("password123"),
-            role=UserRole.RECRUITER,
+            hashed_password=hash_password("password123"),
+            role=Role.OWNER,
             company_name="Tech Giants Inc"
         )
         db.add(recruiter)
@@ -42,8 +50,8 @@ async def seed_db():
         seeker = User(
             email="seeker@example.com",
             username="job_seeker",
-            hashed_password=get_password_hash("password123"),
-            role=UserRole.SEEKER
+            hashed_password=hash_password("password123"),
+            role=Role.SEEKER
         )
         db.add(seeker)
         await db.commit()
@@ -76,7 +84,6 @@ async def seed_db():
                 location=location,
                 salary=random.randint(8, 25) * 1000000, # 8jt - 25jt
                 description=description,
-                requirements="Bachelor Degree, 2+ Years Experience",
                 job_type=JobType.FULL_TIME,
                 is_remote=is_remote,
                 skills=skills, # Saves as JSON

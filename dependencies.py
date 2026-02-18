@@ -4,7 +4,7 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from routers.auth import verify_access_token
+from security import verify_access_token
 
 from database import get_db
 import models
