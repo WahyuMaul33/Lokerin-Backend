@@ -47,26 +47,42 @@ async def match_jobs_profile(
         )
         .options(selectinload(models.Job.owner))
         .order_by("distance") # Smallest distance = Best match
-        .limit(limit)
+        .limit(limit * 20)
     )
 
     result = await db.execute(query)
     matched_jobs = result.all()
 
     # 3. Calculate Scores
-    response_data = []
-    for job, distance in matched_jobs:
-        # Cosine Distance is 0 to 2. 
-        # 0 = Perfect Match, 1 = No Match, 2 = Opposite.
-        # Formula: Score = 1 - Distance (clamped to 0%)
-        raw_score = 1 - distance
-        match_percentage = max(0, min(100, raw_score*100))
+    candidate_skills = set(profile.skills or [])
     
-    job_data = JobMatchResponse(
-        **job.__dict__,
-        match_score=round(match_percentage, 1)
-    )
-    response_data.append(job_data)
+    scored_jobs = []
+    for job, distance in matched_jobs:
+        # Signal 1: Skill overlap (explicit, reliable)
+        job_skills = set(job.skills or [])
+        if job_skills:
+            skill_score = len(candidate_skills & job_skills) / len(job_skills)
+        else:
+            skill_score = 0.0
+
+        # Signal 2: Embedding similarity (semantic, fuzzy)
+        embedding_score = max(0.0, 1 - distance)
+
+        # Weighted combination
+        final_score = (skill_score * 0.6) + (embedding_score * 0.4)
+        scored_jobs.append((job, final_score))
+
+    # Step 3: Re-sort by hybrid score, take top `limit`
+    scored_jobs.sort(key=lambda x: x[1], reverse=True)
+    scored_jobs = scored_jobs[:limit]
+
+    response_data = []
+    for job, final_score in scored_jobs:
+        job_data = JobMatchResponse(
+            **job.__dict__,
+            match_score=round(final_score * 100, 1)
+        )
+        response_data.append(job_data)
 
     return APIResponse(
         success=True,

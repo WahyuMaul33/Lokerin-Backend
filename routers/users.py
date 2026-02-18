@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 import models
-from .auth import hash_password 
+from security import hash_password
 from database import get_db
 from dependencies import get_current_user 
 
