@@ -172,7 +172,7 @@ uvicorn main:app --reload
 1. **Register** as a User (Seeker).
 2. **Upload CV**: `POST /api/v1/users/profile` (Upload a PDF).
 3. **Find Matches**: `GET /api/v1/jobs/match`.
-4. **Result**: The API returns jobs ranked by compatibility score (e.g., `92% Match`).
+4. **Result**: The API returns jobs ranked by compatibility score (e.g., `75% Match`).
 
 ## ⚙️ Environment Variables
 Create a `.env` file in the root directory:
